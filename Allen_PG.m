@@ -87,7 +87,7 @@ function UpdateSection_Callback(hObject, eventdata, handles)
 %imshow(squeeze(Sections(24,:,:,:))); hold on; line(280*[1 1],[67 350],'color','k');
 % display webcam image, if available
 
-load('/Users/Priyanka/Desktop/LABWORK_II/Data/AllenCCF_PG/AllenSections_AON_APC.mat');
+load(fullfile(fileparts(mfilename('fullpath')),'AllenSections_AON_APC.mat'));
 
 % find the relevant section
 [~,imageID] = min(abs(AP - handles.Coordinates.Data(1)));
@@ -109,7 +109,7 @@ if isempty(Surface{imageID})
     [~,yi] = getpts(handles.MySection);
     % ignore x, keep y
     Surface{imageID}(1,:) = [handles.Coordinates.Data(2), yi];
-    save('/Users/Priyanka/Desktop/LABWORK_II/Data/AllenCCF_PG/AllenSections_AON_APC.mat','AP','Scale','Sections','Surface');
+    save(fullfile(fileparts(mfilename('fullpath')),'AllenSections_AON_APC.mat'),'AP','Scale','Sections','Surface');
     handles.Msg.String = '';
 else
     if ~isempty(find(Surface{imageID}(:,1)==handles.Coordinates.Data(2)))
@@ -119,7 +119,7 @@ else
         [~,yi] = getpts(handles.MySection);
         % ignore x, keep y
         Surface{imageID} = vertcat(Surface{imageID},[handles.Coordinates.Data(2), yi]);
-        save('/Users/Priyanka/Desktop/LABWORK_II/Data/AllenCCF_PG/AllenSections_AON_APC.mat','AP','Scale','Sections','Surface');
+        save(fullfile(fileparts(mfilename('fullpath')),'AllenSections_AON_APC.mat'),'AP','Scale','Sections','Surface');
         handles.Msg.String = '';
     end
 end
@@ -134,7 +134,7 @@ function EditSurface_Callback(hObject, eventdata, handles)
 % hObject    handle to EditSurface (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-load('/Users/Priyanka/Desktop/LABWORK_II/Data/AllenCCF_PG/AllenSections_AON_APC.mat');
+load(fullfile(fileparts(mfilename('fullpath')),'AllenSections_AON_APC.mat'));
 % find the relevant section
 [~,imageID] = min(abs(AP - handles.Coordinates.Data(1)));
 
@@ -143,7 +143,7 @@ handles.Msg.String = 'Mark Surface';
 % ignore x, keep y
 foo = find(Surface{imageID}(:,1)==handles.Coordinates.Data(2));
 Surface{imageID}(foo,2) = yi;
-save('/Users/Priyanka/Desktop/LABWORK_II/Data/AllenCCF_PG/AllenSections_AON_APC.mat','AP','Scale','Sections','Surface');
+save(fullfile(fileparts(mfilename('fullpath')),'AllenSections_AON_APC.mat'),'AP','Scale','Sections','Surface');
 % update surface
 handles.surface.YData = [yi yi];
 handles.Msg.String = '';
