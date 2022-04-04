@@ -249,8 +249,8 @@ mean_depth = mean(handles.DriveDepth.Data,'omitnan')/1000;
 axes(handles.MySection); hold on
 for i = 1:length(handles.DriveDepth.Data)
     if ~isnan(handles.DriveDepth.Data(i))
-        x1 = handles.pixelcoordinates.Data(1,1)+[-2 2];
-        x2 = handles.pixelcoordinates.Data(1,2)+[-2 2];
+        x1 = handles.pixelcoordinates.Data(1,1)+[-5 5];
+        x2 = handles.pixelcoordinates.Data(1,2)+[-5 5];
         y = (handles.pixelcoordinates.Data(2,1)+handles.pixelcoordinates.Data(2,2)*handles.DriveDepth.Data(i)/1000)*[1 1];
         line(x1,y,'color','k','LineWidth',1);
         line(x2,y,'color','k','LineWidth',1);
