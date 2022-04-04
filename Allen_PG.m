@@ -22,7 +22,7 @@ function varargout = Allen_PG(varargin)
 
 % Edit the above text to modify the response to help Allen_PG
 
-% Last Modified by GUIDE v2.5 16-Mar-2021 16:36:32
+% Last Modified by GUIDE v2.5 23-Jun-2021 16:29:49
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -119,44 +119,85 @@ function UpdateSection_Callback(hObject, eventdata, handles)
 %imshow(squeeze(Sections(24,:,:,:))); hold on; line(280*[1 1],[67 350],'color','k');
 % display webcam image, if available
 
-load(fullfile(fileparts(mfilename('fullpath')),'AllenSections_AON_APC.mat'));
+load(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String));
 
-% find the relevant section
-[~,imageID] = min(abs(AP - handles.Coordinates.Data(1)));
-axes(handles.MySection);
-handles.current_section = image(squeeze(Sections(imageID,:,:,:)),'parent',handles.MySection);
-set(handles.MySection,'XTick',[],'XTickLabel',' ','XTickMode','manual','XTickLabelMode','manual');
-set(handles.MySection,'YTick',[],'YTickLabel',' ','YTickMode','manual','YTickLabelMode','manual');
-
-% draw a vertical line along the ML coordinate on either side
-ML_left = Scale.ML.zero + Scale.ML.left*handles.Coordinates.Data(2);
-ML_right = Scale.ML.zero + Scale.ML.right*handles.Coordinates.Data(2);
-handles.ML_L = line(ML_left*[1 1], [1 368], 'color', 'r');
-handles.ML_R = line(ML_right*[1 1], [1 368], 'color', 'r');
-
-handles.pixelcoordinates.Data(1,:) = [ML_left ML_right];
-
-% mark the tetrode location based on depth
-% define surface
-if isempty(Surface{imageID})
-    handles.Msg.String = 'Mark Surface';
-    [~,yi] = getpts(handles.MySection);
-    % ignore x, keep y
-    Surface{imageID}(1,:) = [handles.Coordinates.Data(2), yi];
-    save(fullfile(fileparts(mfilename('fullpath')),'AllenSections_AON_APC.mat'),'AP','Scale','Sections','Surface');
-    handles.Msg.String = '';
-else
-    if ~isempty(find(Surface{imageID}(:,1)==handles.Coordinates.Data(2)))
-        yi = Surface{imageID}(find(Surface{imageID}(:,1)==handles.Coordinates.Data(2)),2);
-    else
+if ~handles.SectionType.Value
+    % find the relevant section
+    [~,imageID] = min(abs(AP - handles.Coordinates.Data(1)));
+    axes(handles.MySection);
+    handles.current_section = image(squeeze(Sections(imageID,:,:,:)),'parent',handles.MySection);
+    set(handles.MySection,'XTick',[],'XTickLabel',' ','XTickMode','manual','XTickLabelMode','manual');
+    set(handles.MySection,'YTick',[],'YTickLabel',' ','YTickMode','manual','YTickLabelMode','manual');
+    
+    % draw a vertical line along the ML coordinate on either side
+    ML_left = Scale.ML.zero + Scale.ML.left*handles.Coordinates.Data(2);
+    ML_right = Scale.ML.zero + Scale.ML.right*handles.Coordinates.Data(2);
+    handles.ML_L = line(ML_left*[1 1], [1 368], 'color', 'r');
+    handles.ML_R = line(ML_right*[1 1], [1 368], 'color', 'r');
+    
+    handles.pixelcoordinates.Data(1,:) = [ML_left ML_right];
+    
+    % mark the tetrode location based on depth
+    % define surface
+    if isempty(Surface{imageID})
         handles.Msg.String = 'Mark Surface';
         [~,yi] = getpts(handles.MySection);
         % ignore x, keep y
-        Surface{imageID} = vertcat(Surface{imageID},[handles.Coordinates.Data(2), yi]);
-        save(fullfile(fileparts(mfilename('fullpath')),'AllenSections_AON_APC.mat'),'AP','Scale','Sections','Surface');
+        Surface{imageID}(1,:) = [handles.Coordinates.Data(2), yi];
+        save(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String),'AP','Scale','Sections','Surface');
         handles.Msg.String = '';
+    else
+        if ~isempty(find(Surface{imageID}(:,1)==handles.Coordinates.Data(2)))
+            yi = Surface{imageID}(find(Surface{imageID}(:,1)==handles.Coordinates.Data(2)),2);
+        else
+            handles.Msg.String = 'Mark Surface';
+            [~,yi] = getpts(handles.MySection);
+            % ignore x, keep y
+            Surface{imageID} = vertcat(Surface{imageID},[handles.Coordinates.Data(2), yi]);
+            save(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String),'AP','Scale','Sections','Surface');
+            handles.Msg.String = '';
+        end
+    end
+
+else
+    % find the relevant section
+    [~,imageID] = min(abs(AP - handles.Coordinates.Data(2)));
+    axes(handles.MySection);
+    handles.current_section = image(squeeze(Sections(imageID,:,:,:)),'parent',handles.MySection);
+    set(handles.MySection,'XTick',[],'XTickLabel',' ','XTickMode','manual','XTickLabelMode','manual');
+    set(handles.MySection,'YTick',[],'YTickLabel',' ','YTickMode','manual','YTickLabelMode','manual');
+    
+    % draw a vertical line along the AP coordinate
+    ML_left = Scale.ML.zero + Scale.ML.left*handles.Coordinates.Data(1);
+    ML_right = NaN;
+    handles.ML_L = line(ML_left*[1 1], [1 368], 'color', 'r');
+    handles.ML_R = line(ML_right*[1 1], [1 368], 'color', 'r');
+    
+    handles.pixelcoordinates.Data(1,:) = [ML_left ML_right];
+    
+    % mark the tetrode location based on depth
+    % define surface
+    if isempty(Surface{imageID})
+        handles.Msg.String = 'Mark Surface';
+        [~,yi] = getpts(handles.MySection);
+        % ignore x, keep y
+        Surface{imageID}(1,:) = [handles.Coordinates.Data(1), yi];
+        save(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String),'AP','Scale','Sections','Surface');
+        handles.Msg.String = '';
+    else
+        if ~isempty(find(Surface{imageID}(:,1)==handles.Coordinates.Data(1)))
+            yi = Surface{imageID}(find(Surface{imageID}(:,1)==handles.Coordinates.Data(1)),2);
+        else
+            handles.Msg.String = 'Mark Surface';
+            [~,yi] = getpts(handles.MySection);
+            % ignore x, keep y
+            Surface{imageID} = vertcat(Surface{imageID},[handles.Coordinates.Data(1), yi]);
+            save(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String),'AP','Scale','Sections','Surface');
+            handles.Msg.String = '';
+        end
     end
 end
+
 % surface
 handles.surface = line([1 553], [yi yi], 'color', 'b');
 handles.DV = line([1 553], yi + Scale.DV*handles.Coordinates.Data(3)*[1 1], 'color', 'r');
@@ -169,7 +210,7 @@ function EditSurface_Callback(hObject, eventdata, handles)
 % hObject    handle to EditSurface (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-load(fullfile(fileparts(mfilename('fullpath')),'AllenSections_AON_APC.mat'));
+load(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String));
 % find the relevant section
 [~,imageID] = min(abs(AP - handles.Coordinates.Data(1)));
 
@@ -178,7 +219,7 @@ handles.Msg.String = 'Mark Surface';
 % ignore x, keep y
 foo = find(Surface{imageID}(:,1)==handles.Coordinates.Data(2));
 Surface{imageID}(foo,2) = yi;
-save(fullfile(fileparts(mfilename('fullpath')),'AllenSections_AON_APC.mat'),'AP','Scale','Sections','Surface');
+save(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String),'AP','Scale','Sections','Surface');
 % update surface
 handles.surface.YData = [yi yi];
 handles.Msg.String = '';
@@ -272,3 +313,41 @@ function UpdateDepth_Callback(hObject, eventdata, handles)
 % hObject    handle to UpdateDepth (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on button press in SectionType.
+function SectionType_Callback(hObject, eventdata, handles)
+% hObject    handle to SectionType (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of SectionType
+if get(hObject,'Value')
+    handles.Section_Names.String = 'AllenSections_Sagittal.mat';
+else
+    handles.Section_Names.String = 'AllenSections_AON_APC.mat';
+end
+UpdateSection_Callback(hObject, eventdata, handles);
+guidata(hObject, handles);
+
+
+function Section_Names_Callback(hObject, eventdata, handles)
+% hObject    handle to Section_Names (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of Section_Names as text
+%        str2double(get(hObject,'String')) returns contents of Section_Names as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function Section_Names_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to Section_Names (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
