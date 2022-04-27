@@ -56,11 +56,12 @@ MyURL = ['https://mouse.brain-map.org/experiment/siv?id=100142144&imageId=',...
         num2str(ImageID(i)),...
         '&imageType=atlas&initImage=atlas&showSubImage=y&contrast=0.5,0.5,0,255,4'];
 web(MyURL,'-noaddressbox','-notoolbar')
-pause(10);
+pause(20);
 
 % Take screen capture
 robot = java.awt.Robot();
 pos = [434 182 553 400]; % [left top width height] 1036, 605
+%pos = [434 200 553 500]; % [left top width height] 1036, 605
 rect = java.awt.Rectangle(pos(1),pos(2),pos(3),pos(4));
 cap = robot.createScreenCapture(rect);
 
@@ -70,7 +71,7 @@ imgData = zeros(cap.getHeight,cap.getWidth,3,'uint8');
 imgData(:,:,1) = reshape(rgb(3:4:end),cap.getWidth,[])';
 imgData(:,:,2) = reshape(rgb(2:4:end),cap.getWidth,[])';
 imgData(:,:,3) = reshape(rgb(1:4:end),cap.getWidth,[])';
-%imshow(imgData)
+imshow(imgData)
 
 Sections(i,:,:,:) = imgData;
 
