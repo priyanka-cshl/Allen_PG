@@ -555,9 +555,9 @@ if ~handles.SectionType.Value
     % find the surface
     yi = [];
     if isempty(Surface{imageID})
-    elseif isempty(find(Surface{imageID}(:,1)==handles.Coordinates.Data(1)))
+    elseif isempty(find(Surface{imageID}(:,1)==handles.DriveCoords.Data{2,whichTT}))
     else
-        yi = Surface{imageID}(find(Surface{imageID}(:,1)==handles.Coordinates.Data(2)),2);
+        yi = Surface{imageID}(find(Surface{imageID}(:,1)==handles.DriveCoords.Data{2,whichTT}),2);
     end
     if isempty(yi) % ask user to mark surface
         % draw a vertical line along the ML coordinate on either side
@@ -566,7 +566,7 @@ if ~handles.SectionType.Value
         handles.Msg.String = 'Mark Surface';
         [~,yi] = getpts(handles.MySection);
         % ignore x, keep y
-        Surface{imageID}(1,:) = [handles.Coordinates.Data(2), yi];
+        Surface{imageID}(end+1,:) = [handles.DriveCoords.Data{2,whichTT}, yi];
         save(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String),'AP','Scale','Sections','Surface');
         handles.Msg.String = '';
     end
@@ -596,9 +596,9 @@ else % Sagittal
     % find the surface
     yi = [];
     if isempty(Surface{imageID})
-    elseif isempty(find(Surface{imageID}(:,1)==handles.Coordinates.Data(1)))
+    elseif isempty(find(Surface{imageID}(:,1)==handles.DriveCoords.Data{1,whichTT}))
     else
-        yi = Surface{imageID}(find(Surface{imageID}(:,1)==handles.Coordinates.Data(1)),2);
+        yi = Surface{imageID}(find(Surface{imageID}(:,1)==handles.DriveCoords.Data{1,whichTT}),2);
     end
     if isempty(yi) % ask user to mark surface
         % draw a vertical line along the relevant AP coordinate
@@ -606,7 +606,7 @@ else % Sagittal
         handles.Msg.String = 'Mark Surface';
         [~,yi] = getpts(handles.MySection);
         % ignore x, keep y
-        Surface{imageID}(1,:) = [handles.Coordinates.Data(1), yi];
+        Surface{imageID}(end+1,:) = [handles.DriveCoords.Data{1,whichTT}, yi];
         save(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String),'AP','Scale','Sections','Surface');
         handles.Msg.String = '';
     end
