@@ -561,7 +561,7 @@ if ~handles.SectionType.Value
     end
     if isempty(yi) % ask user to mark surface
         % draw a vertical line along the ML coordinate on either side
-        line(whichML(1)*[1 1], [1 368], 'color', 'r');
+        %line(whichML(1)*[1 1], [1 368], 'color', 'r');
         line(whichML(2)*[1 1], [1 368], 'color', 'r');
         handles.Msg.String = 'Mark Surface';
         [~,yi] = getpts(handles.MySection);
@@ -577,7 +577,7 @@ if ~handles.SectionType.Value
         drive_coords(1,tt) = yi + Scale.DV*(depth_start+0.15*handles.DriveCoords.Data{4,tt});
     end
     drive_coords(2,:) = yi;
-    ML = Scale.ML.zero + Scale.ML.left*cell2mat(handles.DriveCoords.Data(2,:));
+    ML = Scale.ML.zero + Scale.ML.right*cell2mat(handles.DriveCoords.Data(2,:));
     ClearLinesFromAxes();
     line((ML'*[1 1])', drive_coords, 'color', 'r'); 
     
