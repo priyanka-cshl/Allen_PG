@@ -22,7 +22,7 @@ function varargout = TetrodeMapper(varargin)
 
 % Edit the above text to modify the response to help TetrodeMapper
 
-% Last Modified by GUIDE v2.5 26-Apr-2022 23:22:21
+% Last Modified by GUIDE v2.5 28-Apr-2022 21:53:46
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -241,9 +241,9 @@ end
 guidata(hObject, handles);
 
 
-% --- Executes on button press in LoadDrive.
-function LoadDrive_Callback(hObject, eventdata, handles)
-% hObject    handle to LoadDrive (see GCBO)
+% --- Executes on button press in LoadMouse.
+function LoadMouse_Callback(hObject, eventdata, handles)
+% hObject    handle to LoadMouse (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.figure1.Position = [0.4882 0.3511 0.63 0.5889];
@@ -527,6 +527,26 @@ end
 save(filename_local,'Drive');
 if handles.useserver
     save(filename_server,'Drive');
+end
+guidata(hObject, handles);
+UpdateDrive_Callback(hObject, eventdata, handles);
+
+% --- Executes on button press in LoadDrive.
+function LoadDrive_Callback(hObject, eventdata, handles)
+% hObject    handle to LoadDrive (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+[LogName, path] = uigetfile('Select an Drive Log');
+load(fullfile(path,LogName));
+handles.DriveCoords.Data = Drive.coords;
+if Drive.Orientation
+    handles.Section_Names.String = 'AllenSections_Sagittal.mat';
+    handles.SectionType.Value = 1;
+    handles.Coordinates.Data(2) = mode((cell2mat(handles.DriveCoords.Data(2,:))));
+else
+    handles.Section_Names.String = 'AllenSections_AON_APC.mat';
+    handles.SectionType.Value = 0;
+    handles.Coordinates.Data(1) = mode((cell2mat(handles.DriveCoords.Data(1,:))));
 end
 guidata(hObject, handles);
 UpdateDrive_Callback(hObject, eventdata, handles);
