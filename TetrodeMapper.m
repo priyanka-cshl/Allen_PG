@@ -22,7 +22,7 @@ function varargout = TetrodeMapper(varargin)
 
 % Edit the above text to modify the response to help TetrodeMapper
 
-% Last Modified by GUIDE v2.5 28-Apr-2022 21:53:46
+% Last Modified by GUIDE v2.5 03-Apr-2025 05:04:57
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -57,8 +57,13 @@ handles.output = hObject;
 handles.useserver = 0;
 handles.figure1.Position = [0.4882 0.3511 0.4868 0.5889];
 
-% Parse inputs
+% initialize plots
+handles.ML_L = line([nan nan], [1 368], 'color', 'r');
+handles.ML_R = line([nan nan], [1 368], 'color', 'r');
+handles.TTline = plot(nan, nan, 'r');
+guidata(hObject, handles);
 
+% Parse inputs
 if ~isempty(varargin)
     if isnumeric(varargin{1}) % user entered coordinates
         handles.Coordinates.Data(1) = varargin{1}(1);
@@ -93,6 +98,7 @@ else
     handles.figure1.Position = [0.4882 0.3511 0.4868 0.5889];
     UpdateSection_Callback(hObject, eventdata, handles);
 end
+
 % Update handles structure
 guidata(hObject, handles);
 
@@ -200,6 +206,7 @@ end
 
 % surface
 handles.surface = line([1 553], [yi yi], 'color', 'b');
+handles.refsurface = line([1 553], [yi yi], 'color', 'r');
 handles.DV = line([1 553], yi + Scale.DV*handles.Coordinates.Data(3)*[1 1], 'color', 'r');
 handles.pixelcoordinates.Data(2,:) = [yi Scale.DV];
 guidata(hObject, handles);
@@ -484,7 +491,7 @@ end
 
 % surface
 handles.surface = line([1 553], [yi yi], 'color', 'b');
-handles.DV = line([1 553], yi + Scale.DV*handles.Coordinates.Data(3)*[1 1], 'color', 'r');
+handles.DV = line([1 553], yi + Scale.DV*handles.Coordinates.Data(3)*[1 1], 'color', 'k');
 handles.pixelcoordinates.Data(2,:) = [yi Scale.DV];
 guidata(hObject, handles);
 
@@ -643,3 +650,55 @@ else % Sagittal
 end
 
 guidata(hObject, handles);
+
+
+% --- Executes on button press in SetRef.
+function SetRef_Callback(hObject, eventdata, handles)
+% hObject    handle to SetRef (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+load(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String));
+if ~handles.SectionType.Value
+    % find the relevant section
+    [~,imageID] = min(abs(AP - handles.refsection.Data(1)));
+    if ~isempty(find(Surface{imageID}(:,1)==handles.refsection.Data(2)))
+            yi = Surface{imageID}(find(Surface{imageID}(:,1)==handles.refsection.Data(2)),2);
+            %handles.refsurface.YData = [yi yi];
+            handles.refsurface = line([1 553], [yi yi], 'color', 'k');
+    else
+        handles.Msg.String = 'Mark Surface';
+    end
+end
+guidata(hObject, handles);
+
+
+% --- Executes on button press in checkTT.
+function checkTT_Callback(hObject, eventdata, handles)
+% hObject    handle to checkTT (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+load(fullfile(fileparts(mfilename('fullpath')),handles.Section_Names.String),'Scale');
+TTpositions = [];
+% left TTs
+for i = handles.TTcoords.Data(1):-1:1
+    myTT = handles.pixelcoordinates.Data(1,2) + i*(handles.TTcoords.Data(3)*Scale.ML.left);
+    TTpositions = vertcat(TTpositions,myTT);
+end
+% right TTs
+for i = 1:handles.TTcoords.Data(2)
+    myTT = handles.pixelcoordinates.Data(1,2) + i*(handles.TTcoords.Data(3)*Scale.ML.right);
+    TTpositions = vertcat(TTpositions,myTT);
+end
+numTTs = numel(TTpositions);
+TTx = [TTpositions TTpositions nan(numTTs,1)]';
+y(1) = handles.pixelcoordinates.Data(2,1);
+y(2) = handles.Coordinates.Data(3)*Scale.DV;
+y(2) = y(1) + y(2);
+%TTy = [repmat(handles.pixelcoordinates.Data(2,:),numTTs,1) nan(numTTs,1)]';
+TTy = [repmat(y,numTTs,1) nan(numTTs,1)]';
+axes(handles.MySection);
+hold on
+plot(TTx(:),TTy(:),':k','Linewidth',1);
+
+
+
