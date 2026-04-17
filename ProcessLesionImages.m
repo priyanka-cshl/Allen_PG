@@ -4,9 +4,13 @@ if nargin < 1
 end
 
 % --- Get image list from folder ---
-[folder, ~, ext] = fileparts(img_path);
+if exist(img_path) == 7 % folder
+    folder = img_path;
+else
+    [folder, ~, ext] = fileparts(img_path);
+end
 if isempty(folder), folder = pwd; end
-extensions = {'*.tif'}; %,'*.tiff','*.png','*.jpg'};
+extensions = {'*.tif'};
 img_list = {};
 for e = 1:length(extensions)
     d = dir(fullfile(folder, extensions{e}));
@@ -26,108 +30,197 @@ hFig = figure('Name','Brain Slice Editor','NumberTitle','off',...
 hAx = axes(hFig,'Position',[0.05 0.18 0.9 0.78]);
 set(hFig, 'Toolbar', 'none');
 
+setappdata(hFig,'handles',struct('ax',hAx));
+set_status(hFig,true,'Loading images...');
+
+state.all_results = struct();
+% Auto-load session if it exists
+session_file = fullfile(folder, 'brain_slice_all_results.mat');
+if isfile(session_file)
+    loaded = load(session_file);
+    if isfield(loaded,'all_results')
+        state.all_results = loaded.all_results;
+        fprintf('Session auto-loaded from %s\n', session_file);
+    end
+end
+
+% Preload all images and run auto-detect
+gray_stack  = cell(length(img_list),1);
+auto_bounds = cell(length(img_list),1);
+for i = 1:length(img_list)
+    img = imread(img_list{i});
+    if size(img,3) > 1, g = rgb2gray(img); else, g = img; end
+    gray_stack{i} = single(mat2gray(double(g)));
+    key = sprintf('img%d',i);
+    if isfield(state.all_results, key)
+        r = state.all_results.(key);
+        auto_bounds{i} = struct('left',r.left,'right',r.right,...
+            'top',r.top,'bottom',r.bottom,'midline',r.midline);
+    else
+        [l,rt,t,b,m]   = auto_detect(gray_stack{i});
+        auto_bounds{i} = struct('left',l,'right',rt,'top',t,'bottom',b,'midline',m);
+    end
+    fprintf('  Loaded %d/%d\n', i, length(img_list));
+end
+setappdata(hFig,'gray_stack',gray_stack);
+setappdata(hFig,'auto_bounds',auto_bounds);
+
 % --- State ---
-state.img_list        = img_list;
-state.img_idx         = img_idx;
-state.all_results     = struct();
-state.holes           = {};
+state.img_list         = img_list;
+state.img_idx          = img_idx;
+state.holes            = {};
 state.electrode_tracks = {};
-state.has_hole        = false;
-state.has_electrode   = false;
+state.has_hole         = false;
+state.has_electrode    = false;
+state.slice_thickness  = 75; % um
+state.ap_direction     = 1;  % 1 = first slice is anterior, -1 = first slice is posterior
+% Scale: pixels to um
+state.scale.is_set      = false;
+state.scale.um_per_px   = 1;
+state.scale.p1          = [];
+state.scale.p2          = [];
+state.scale.distance_px = 0;
+state.scale.distance_um = 0;
+state.scale.img_idx     = [];
+
+% Restore scale from session if saved
+if isfield(loaded,'scale')
+    state.scale = loaded.scale;
+end
 
 setappdata(hFig,'state',state);
-setappdata(hFig,'handles',struct('ax',hAx));
 
 % --- Panel ---
-uipanel(hFig,'Units','normalized','Position',[0 0 1 0.155],...
+uipanel(hFig,'Units','normalized','Position',[0 0 1 0.16],...
     'BackgroundColor',[0.15 0.15 0.15]);
 
 % Nav buttons
 uicontrol(hFig,'Style','pushbutton','String','< Prev',...
-    'Units','normalized','Position',[0.01 0.08 0.07 0.07],...
+    'Units','normalized','Position',[0.01 0.06 0.07 0.05],...
     'Callback',@(~,~) nav_image(hFig,-1));
 uicontrol(hFig,'Style','pushbutton','String','Next >',...
-    'Units','normalized','Position',[0.09 0.08 0.07 0.07],...
+    'Units','normalized','Position',[0.09 0.06 0.07 0.05],...
     'Callback',@(~,~) nav_image(hFig,+1));
 
 % Filenames dropdown Menu
 uicontrol(hFig,'Style','popupmenu',...
-    'Units','normalized','Position',[0.01 0.03 0.26 0.04],...
+    'Units','normalized','Position',[0.01 0.01 0.15 0.04],...
     'Tag','imgDropdown',...
     'String',cellfun(@(x) fileparts_name(x), img_list, 'UniformOutput', false),...
     'Value',img_idx,...
     'Callback',@(src,~) dropdown_nav(hFig,src));
 
-% General buttons
-uicontrol(hFig,'Style','pushbutton','String','Save All',...
-    'Units','normalized','Position',[0.01 0.02 0.07 0.05],...
-    'Callback',@(~,~) save_all(hFig));
-uicontrol(hFig,'Style','pushbutton','String','Reset',...
-    'Units','normalized','Position',[0.09 0.02 0.07 0.05],...
-    'Callback',@(~,~) reset_lines(hFig));
+% Status bar
+uicontrol(hFig,'Style','text','String','Ready.',...
+    'Units','normalized','Position',[0.01 0.12 0.98 0.02],...
+    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[0.5 1 0.5],...
+    'FontSize',10,'HorizontalAlignment','left','Tag','statusText');
 
-% Hole controls
-uicontrol(hFig,'Style','text','String','HOLE',...
-    'Units','normalized','Position',[0.30 0.12 0.08 0.03],...
+% Slice Annotations label
+uicontrol(hFig,'Style','text','String','SLICE ANNOTATIONS',...
+    'Units','normalized','Position',[0.16 0.112 0.18 0.03],...
     'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor','y',...
-    'FontWeight','bold','FontSize',10);
-uicontrol(hFig,'Style','checkbox','String','Has Hole',...
-    'Units','normalized','Position',[0.30 0.08 0.10 0.03],...
+    'FontWeight','bold','FontSize',8);
+
+% Contrast slider
+uicontrol(hFig,'Style','text','String','Contrast',...
+    'Units','normalized','Position',[0.66 0.11 0.06 0.03],...
+    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor','w','FontSize',8);
+uicontrol(hFig,'Style','slider','Min',0.1,'Max',3.0,'Value',1.0,...
+    'Units','normalized','Position',[0.52 0.09 0.19 0.025],...
+    'Tag','contrastSlider',...
+    'Callback',@(src,~) update_contrast(src,hFig));
+
+% Select as reference checkbox
+uicontrol(hFig,'Style','checkbox','String','Reference',...
+    'Units','normalized','Position',[0.2 0.09 0.09 0.03],...
+    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[1 0.8 0],...
+    'Tag','chkReference');
+
+% Scale image checkbox
+uicontrol(hFig,'Style','checkbox','String','Scale Image',...
+    'Units','normalized','Position',[0.2 0.05 0.09 0.03],...
+    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[0.5 0.8 1],...
+    'Tag','chkScale');
+uicontrol(hFig,'Style','pushbutton','String','Set Scale',...
+    'Units','normalized','Position',[0.2 0.01 0.09 0.03],...
+    'Callback',@(~,~) set_scale(hFig));
+uicontrol(hFig,'Style','pushbutton','String','Clear Scale',...
+    'Units','normalized','Position',[0.3 0.01 0.09 0.03],...
+    'Callback',@(~,~) clear_scale(hFig));
+uicontrol(hFig,'Style','text','String','No scale set',...
+    'Units','normalized','Position',[0.3 0.04 0.10 0.03],...
+    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[0.5 0.8 1],...
+    'FontSize',8,'HorizontalAlignment','left','Tag','scaleText');
+
+% Lesion controls
+uicontrol(hFig,'Style','checkbox','String','Has Lesion',...
+    'Units','normalized','Position',[0.42 0.05 0.09 0.03],...
     'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor','w',...
     'Tag','chkHole','Callback',@(src,~) toggle_hole(src,hFig));
 uicontrol(hFig,'Style','pushbutton','String','Add Hole',...
-    'Units','normalized','Position',[0.30 0.03 0.09 0.04],...
+    'Units','normalized','Position',[0.52 0.05 0.09 0.03],...
     'Tag','btnAddHole','Enable','off',...
     'Callback',@(~,~) add_hole(hFig));
 uicontrol(hFig,'Style','pushbutton','String','Clear Holes',...
-    'Units','normalized','Position',[0.40 0.03 0.09 0.04],...
+    'Units','normalized','Position',[0.62 0.05 0.09 0.03],...
     'Tag','btnClearHoles','Enable','off',...
     'Callback',@(~,~) clear_holes(hFig));
 
 % Electrode controls
-uicontrol(hFig,'Style','text','String','ELECTRODE TRACK',...
-    'Units','normalized','Position',[0.57 0.12 0.15 0.03],...
-    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[1 0.5 0],...
-    'FontWeight','bold','FontSize',10);
-uicontrol(hFig,'Style','checkbox','String','Has Electrode Track',...
-    'Units','normalized','Position',[0.57 0.08 0.16 0.03],...
+uicontrol(hFig,'Style','checkbox','String','Has Tracks',...
+    'Units','normalized','Position',[0.42 0.01 0.09 0.03],...
     'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor','w',...
     'Tag','chkElectrode','Callback',@(src,~) toggle_electrode(src,hFig));
 uicontrol(hFig,'Style','pushbutton','String','Add Track',...
-    'Units','normalized','Position',[0.57 0.03 0.09 0.04],...
+    'Units','normalized','Position',[0.52 0.01 0.09 0.03],...
     'Tag','btnAddTrack','Enable','off',...
     'Callback',@(~,~) add_electrode(hFig));
 uicontrol(hFig,'Style','pushbutton','String','Clear Tracks',...
-    'Units','normalized','Position',[0.67 0.03 0.09 0.04],...
+    'Units','normalized','Position',[0.62 0.01 0.09 0.03],...
     'Tag','btnClearTracks','Enable','off',...
     'Callback',@(~,~) clear_electrodes(hFig));
 
-% Contrast slider
-uicontrol(hFig,'Style','text','String','Contrast',...
-    'Units','normalized','Position',[0.79 0.12 0.06 0.03],...
-    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor','w','FontSize',8);
-uicontrol(hFig,'Style','slider','Min',0.1,'Max',3.0,'Value',1.0,...
-    'Units','normalized','Position',[0.79 0.08 0.18 0.03],...
-    'Tag','contrastSlider',...
-    'Callback',@(src,~) update_contrast(src,hFig));
-
 % Hide/show annotations toggle
 uicontrol(hFig,'Style','togglebutton','String','Hide Annotations',...
-    'Units','normalized','Position',[0.79 0.03 0.18 0.04],...
+    'Units','normalized','Position',[0.72 0.01 0.15 0.04],...
     'Tag','btnHide',...
     'Callback',@(src,~) toggle_visibility(src,hFig));
 
-% Select as reference checkbox
-uicontrol(hFig,'Style','checkbox','String','Reference',...
-    'Units','normalized','Position',[0.18 0.08 0.10 0.03],...
-    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[1 0.8 0],...
-    'Tag','chkReference');
+% Slice thickness input
+uicontrol(hFig,'Style','text','String','Slice (um)',...
+    'Units','normalized','Position',[0.3 0.08 0.03 0.03],...
+    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor','w','FontSize',8);
+uicontrol(hFig,'Style','edit','String','75',...
+    'Units','normalized','Position',[0.34 0.08 0.05 0.03],...
+    'Tag','sliceThickness',...
+    'Callback',@(src,~) update_slice_thickness(src,hFig));
 
-% Status bar
-uicontrol(hFig,'Style','text','String','Ready.',...
-    'Units','normalized','Position',[0.01 0.0 0.98 0.02],...
-    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[0.5 1 0.5],...
-    'FontSize',8,'HorizontalAlignment','left','Tag','statusText');
+% AP direction toggle
+uicontrol(hFig,'Style','togglebutton','String','Ant-Pos',...
+    'Units','normalized','Position',[0.42 0.09 0.08 0.04],...
+    'Tag','btnAPDir',...
+    'Value',0,... % 0 = anterior first
+    'Callback',@(src,~) toggle_ap_direction(src,hFig));
+
+% 3D view button
+uicontrol(hFig,'Style','pushbutton','String','3D View',...
+    'Units','normalized','Position',[0.72 0.07 0.15 0.04],...
+    'Callback',@(~,~) open_3d_view(hFig));
+
+% General buttons
+uicontrol(hFig,'Style','pushbutton','String','Save All',...
+    'Units','normalized','Position',[0.92 0.01 0.07 0.04],...
+    'Callback',@(~,~) save_all(hFig));
+uicontrol(hFig,'Style','pushbutton','String','Reset',...
+    'Units','normalized','Position',[0.92 0.06 0.07 0.04],...
+    'Callback',@(~,~) reset_lines(hFig));
+
+% Update scale display if scale was loaded from session
+if state.scale.is_set
+    set(findobj(hFig,'Tag','scaleText'),...
+        'String',sprintf('%.4f um/px', state.scale.um_per_px));
+end
 
 % --- Load first image ---
 load_image(hFig);
@@ -150,44 +243,38 @@ set(hFig,'Name',sprintf('Brain Slice Editor  —  %s  (%d / %d)',...
 % Update dropdown menu
 set(findobj(hFig,'Tag','imgDropdown'),'Value',idx);
 
-% Load image
-img = imread(img_path);
-if size(img,3) > 1, gray = rgb2gray(img); else, gray = img; end
-gray_norm = mat2gray(double(gray));
-
-% Store for contrast adjustment
+% Get preloaded image
+gray_stack = getappdata(hFig,'gray_stack');
+gray_norm  = double(gray_stack{idx});
 setappdata(hFig,'gray_norm',gray_norm);
-
-% Auto-detect
-[left,right,top,bottom,midline_x] = auto_detect(gray_norm);
 
 % Clear axes and redraw image
 cla(h.ax);
 imshow(gray_norm,[],'Parent',h.ax);
 hold(h.ax,'on');
 
-% Reset contrast slider and hide button
-set(findobj(hFig,'Tag','contrastSlider'),'Value',1.0);
-set(findobj(hFig,'Tag','btnHide'),'Value',0,'String','Hide Annotations');
-
-% Clear old ROI holes/tracks from state
+% Clear state
 state.holes            = {};
 state.electrode_tracks = {};
 state.has_hole         = false;
 state.has_electrode    = false;
 
-% Reset checkboxes
-set(findobj(hFig,'Tag','chkHole'),       'Value',0);
-set(findobj(hFig,'Tag','chkElectrode'),  'Value',0);
-set(findobj(hFig,'Tag','btnAddHole'),    'Enable','off');
-set(findobj(hFig,'Tag','btnClearHoles'), 'Enable','off');
-set(findobj(hFig,'Tag','btnAddTrack'),   'Enable','off');
-set(findobj(hFig,'Tag','btnClearTracks'),'Enable','off');
-set(findobj(hFig,'Tag','chkReference'),'Value',0);
+% Reset all controls
+set(findobj(hFig,'Tag','chkHole'),        'Value',0);
+set(findobj(hFig,'Tag','chkElectrode'),   'Value',0);
+set(findobj(hFig,'Tag','btnAddHole'),     'Enable','off');
+set(findobj(hFig,'Tag','btnClearHoles'),  'Enable','off');
+set(findobj(hFig,'Tag','btnAddTrack'),    'Enable','off');
+set(findobj(hFig,'Tag','btnClearTracks'), 'Enable','off');
+set(findobj(hFig,'Tag','chkReference'),   'Value',0);
+set(findobj(hFig,'Tag','chkScale'),       'Value',0);
+set(findobj(hFig,'Tag','contrastSlider'), 'Value',1.0);
+set(findobj(hFig,'Tag','btnHide'),        'Value',0,'String','Hide Annotations');
 
-% Check if we have saved results for this image
-if isfield(state.all_results, sprintf('img%d',idx))
-    r = state.all_results.(sprintf('img%d',idx));
+% Get bounds — from saved results or auto-detected
+key = sprintf('img%d',idx);
+if isfield(state.all_results, key)
+    r         = state.all_results.(key);
     left      = r.left;
     right     = r.right;
     top       = r.top;
@@ -196,8 +283,10 @@ if isfield(state.all_results, sprintf('img%d',idx))
 
     set(findobj(hFig,'Tag','contrastSlider'),'Value',r.contrast);
     update_contrast(findobj(hFig,'Tag','contrastSlider'),hFig);
-
     set(findobj(hFig,'Tag','chkReference'),'Value',r.is_reference);
+    if isfield(r,'is_scale')
+        set(findobj(hFig,'Tag','chkScale'),'Value',r.is_scale);
+    end
 
     % Restore holes
     if r.has_hole && ~isempty(r.holes)
@@ -230,6 +319,15 @@ if isfield(state.all_results, sprintf('img%d',idx))
                 'angle_deg',t.angle_deg,'length_px',t.length_px);
         end
     end
+else
+    % Use precomputed auto-detect bounds
+    auto_bounds = getappdata(hFig,'auto_bounds');
+    ab        = auto_bounds{idx};
+    left      = ab.left;
+    right     = ab.right;
+    top       = ab.top;
+    bottom    = ab.bottom;
+    midline_x = ab.midline;
 end
 
 % Draw bounding box and midline
@@ -249,6 +347,237 @@ setappdata(hFig,'handles',struct('ax',h.ax,...
     'top',hTop,'bottom',hBottom,'left',hLeft,'right',hRight,'mid',hMid));
 
 set_status(hFig,true,sprintf('Image %d of %d — %s',idx,length(state.img_list),fname));
+
+% Refresh 3D view if open
+update_3d_view(hFig);
+end
+
+% =========================================================================
+%  3D VIEW
+% =========================================================================
+function update_3d_view(hFig)
+save_current(hFig);
+state = getappdata(hFig,'state');
+
+% Only draw if figure is already open (don't auto-create)
+h3d = getappdata(hFig,'h3dFig');
+if isempty(h3d) || ~isvalid(h3d)
+    % Create only when explicitly opened via button
+    % (auto-refresh only if already open)
+    %if ~strcmp(get(hFig,'CurrentObject'),'') || isempty(h3d)
+        return;
+    %end
+end
+
+figure(h3d);
+clf(h3d);
+ax3 = axes(h3d,'Color','k','XColor','w','YColor','w','ZColor','w',...
+    'GridColor','w','GridAlpha',0.15,'Position',[0.1 0.12 0.85 0.83]);
+hold(ax3,'on');
+grid(ax3,'on');
+box(ax3,'on');
+
+thickness   = state.slice_thickness;
+um_per_px   = state.scale.um_per_px;
+fields      = fieldnames(state.all_results);
+n_slices    = length(state.img_list);
+slice_colors = lines(length(fields));
+
+for fi = 1:length(fields)
+    r   = state.all_results.(fields{fi});
+    idx = str2double(fields{fi}(4:end));
+
+    % AP axis: direction toggle
+    if state.ap_direction == 1
+        % First slice = most anterior → Z increases posteriorly
+        z = (idx-1) * thickness;
+    else
+        % First slice = most posterior → Z decreases anteriorly
+        z = (n_slices - idx) * thickness;
+    end
+
+    % Alignment offsets
+    mid_x   = r.midline;
+    bbox_top = r.top;  % Y=0 at top of bounding box
+
+    % --- Holes (yellow dots) ---
+    if r.has_hole && ~isempty(r.holes)
+        for hi = 1:length(r.holes)
+            % ML: col - midline (negative=left, positive=right)
+            ml = (r.holes{hi}.center(1) - mid_x) * um_per_px;
+            % DV: row - top of bbox (0=dorsal, positive=ventral)
+            dv = (r.holes{hi}.center(2) - bbox_top) * um_per_px;
+            plot3(ax3, ml, z, dv, 'o',...
+                'MarkerSize',8,'MarkerFaceColor','y','MarkerEdgeColor','y');
+        end
+    end
+
+    % --- Tracks ---
+    if r.has_electrode && ~isempty(r.electrode_tracks)
+        for ti = 1:length(r.electrode_tracks)
+            t  = r.electrode_tracks{ti};
+            % Base color for this slice, lightened for each track
+            base = slice_colors(fi,:);
+            lighten = (ti-1) * 0.15; % each track gets progressively lighter
+            tc = min(base + lighten, 1);
+
+            ml1 = (t.start(1) - mid_x)   * um_per_px;
+            dv1 = (t.start(2) - bbox_top) * um_per_px;
+            ml2 = (t.end(1)   - mid_x)   * um_per_px;
+            dv2 = (t.end(2)   - bbox_top) * um_per_px;
+
+            % X=ML, Y=AP(Z), Z=DV
+            plot3(ax3,[ml1 ml2],[z z],[dv1 dv2],'-',...
+                'Color',tc,'LineWidth',2);
+        end
+    end
+end
+
+% Axis labels with units
+xlabel(ax3,'ML (um, 0=midline)','Color','w');
+ylabel(ax3,'AP (um)','Color','w');
+zlabel(ax3,'DV (um, 0=dorsal)','Color','w');
+
+ap_dir_str = 'Anterior→Posterior';
+if state.ap_direction == -1, ap_dir_str = 'Posterior→Anterior'; end
+scale_str = sprintf('Scale: %.4f um/px', um_per_px);
+title(ax3,sprintf('3D Reconstruction  |  %s  |  %s', ap_dir_str, scale_str),'Color','w');
+
+% Flip Z axis so dorsal is up
+set(ax3,'ZDir','reverse');
+
+view(ax3,35,25);
+rotate3d(ax3,'on');
+
+% View buttons
+uicontrol(h3d,'Style','pushbutton','String','3D View',...
+    'Units','normalized','Position',[0.01 0.01 0.12 0.05],...
+    'Callback',@(~,~) view(ax3,35,25));
+uicontrol(h3d,'Style','pushbutton','String','Top (ML-AP)',...
+    'Units','normalized','Position',[0.14 0.01 0.14 0.05],...
+    'Callback',@(~,~) view(ax3,0,90));
+uicontrol(h3d,'Style','pushbutton','String','Side (DV-AP)',...
+    'Units','normalized','Position',[0.29 0.01 0.14 0.05],...
+    'Callback',@(~,~) view(ax3,90,0));
+uicontrol(h3d,'Style','pushbutton','String','Front (ML-DV)',...
+    'Units','normalized','Position',[0.44 0.01 0.14 0.05],...
+    'Callback',@(~,~) view(ax3,0,0));
+
+figure(hFig);
+end
+
+% =========================================================================
+%  OPEN 3D VIEW (called by button)
+% =========================================================================
+function open_3d_view(hFig)
+state = getappdata(hFig,'state');
+h3d = getappdata(hFig,'h3dFig');
+if isempty(h3d) || ~isvalid(h3d)
+    h3d = figure('Name','3D Reconstruction','NumberTitle','off',...
+        'Position',[1160 50 650 700],'Color','k');
+    setappdata(hFig,'h3dFig',h3d);
+end
+update_3d_view(hFig);
+end
+
+% =========================================================================
+%  AP DIRECTION TOGGLE
+% =========================================================================
+function toggle_ap_direction(src,hFig)
+state = getappdata(hFig,'state');
+if src.Value
+    state.ap_direction = -1;
+    src.String = 'Pos-Ant';
+else
+    state.ap_direction = 1;
+    src.String = 'Ant-Pos';
+end
+setappdata(hFig,'state',state);
+end
+
+% =========================================================================
+%  SCALE CALIBRATION
+% =========================================================================
+function set_scale(hFig)
+h     = getappdata(hFig,'handles');
+state = getappdata(hFig,'state');
+
+set_status(hFig,true,'Click point 1 on scale image...');
+[x1,y1] = ginput(1);
+% Draw first point marker
+hp1 = plot(h.ax, x1, y1, '+', 'Color','c','MarkerSize',12,'LineWidth',1.5);
+
+set_status(hFig,true,'Click point 2 on scale image...');
+[x2,y2] = ginput(1);
+hp2 = plot(h.ax, x2, y2, '+', 'Color','c','MarkerSize',12,'LineWidth',1.5);
+hln = plot(h.ax,[x1 x2],[y1 y2],'-','Color','c','LineWidth',1);
+
+dist_px = sqrt((x2-x1)^2 + (y2-y1)^2);
+
+% Ask for known distance
+answer = inputdlg('Enter known distance between points (um):',...
+    'Scale Calibration', 1, {'100'});
+if isempty(answer)
+    delete(hp1); delete(hp2); delete(hln);
+    set_status(hFig,true,'Scale calibration cancelled.');
+    return;
+end
+
+dist_um = str2double(answer{1});
+if isnan(dist_um) || dist_um <= 0
+    delete(hp1); delete(hp2); delete(hln);
+    set_status(hFig,true,'Invalid distance entered.');
+    return;
+end
+
+um_per_px = dist_um / dist_px;
+
+state.scale.is_set      = true;
+state.scale.um_per_px   = um_per_px;
+state.scale.p1          = [x1 y1];
+state.scale.p2          = [x2 y2];
+state.scale.distance_px = dist_px;
+state.scale.distance_um = dist_um;
+state.scale.img_idx     = state.img_idx;
+
+setappdata(hFig,'state',state);
+
+% Mark current image as scale image
+set(findobj(hFig,'Tag','chkScale'),'Value',1);
+set(findobj(hFig,'Tag','scaleText'),...
+    'String',sprintf('%.4f um/px', um_per_px));
+
+set_status(hFig,true,sprintf('Scale set: %.4f um/px  (%.1f px = %.1f um)',...
+    um_per_px, dist_px, dist_um));
+end
+
+function clear_scale(hFig)
+state = getappdata(hFig,'state');
+state.scale.is_set    = false;
+state.scale.um_per_px = 1;
+state.scale.p1        = [];
+state.scale.p2        = [];
+state.scale.distance_px = 0;
+state.scale.distance_um = 0;
+state.scale.img_idx   = [];
+setappdata(hFig,'state',state);
+set(findobj(hFig,'Tag','scaleText'),'String','No scale set');
+set(findobj(hFig,'Tag','chkScale'),'Value',0);
+set_status(hFig,true,'Scale cleared.');
+end
+
+% =========================================================================
+%  SLICE THICKNESS
+% =========================================================================
+function update_slice_thickness(src,hFig)
+val = str2double(src.String);
+if isnan(val) || val <= 0
+    set(src,'String','75');
+    val = 75;
+end
+state = getappdata(hFig,'state');
+state.slice_thickness = val;
+setappdata(hFig,'state',state);
 end
 
 % =========================================================================
@@ -284,6 +613,7 @@ r.midline  = mean(h.mid.Position(:,1));
 r.img_path = state.img_list{idx};
 r.contrast = get(findobj(hFig,'Tag','contrastSlider'),'Value');
 r.is_reference = logical(get(findobj(hFig,'Tag','chkReference'),'Value'));
+r.is_scale     = logical(get(findobj(hFig,'Tag','chkScale'),'Value'));
 
 r.has_hole = state.has_hole;
 r.holes    = {};
@@ -310,8 +640,11 @@ function save_all(hFig)
 save_current(hFig);
 state = getappdata(hFig,'state');
 all_results = state.all_results;
+scale       = state.scale;
 assignin('base','all_results',all_results);
-save('brain_slice_all_results.mat','all_results');
+assignin('base','scale',scale);
+save(fullfile(fileparts(state.img_list{1}),'brain_slice_all_results.mat'),...
+    'all_results','scale');
 fprintf('Saved %d image results to brain_slice_all_results.mat\n',...
     length(fieldnames(all_results)));
 set_status(hFig,true,'All results saved to brain_slice_all_results.mat');
@@ -406,6 +739,12 @@ n = length(state.holes)+1;
 set_status(hFig,true,'Draw ellipse around hole, double-click to confirm...');
 hRoi = drawellipse(h.ax,'Color','y');
 wait(hRoi);
+
+if ~isvalid(hRoi)
+    set_status(hFig,true,'Hole drawing cancelled.');
+    return;
+end
+
 pos.center   = hRoi.Center;
 pos.semiaxes = hRoi.SemiAxes;
 pos.angle    = hRoi.RotationAngle;
@@ -493,7 +832,7 @@ set_status(hFig,true,'Reset to auto-detected values.');
 end
 
 % =========================================================================
-%  Filenames Menu
+%  DROPDOWN NAV
 % =========================================================================
 function dropdown_nav(hFig,src)
 save_current(hFig);
