@@ -640,11 +640,16 @@ function save_all(hFig)
 save_current(hFig);
 state = getappdata(hFig,'state');
 all_results = state.all_results;
-scale       = state.scale;
+
+% Session-level metadata
+session.slice_thickness = state.slice_thickness;
+session.ap_direction    = state.ap_direction;
+session.scale           = state.scale;
+
 assignin('base','all_results',all_results);
-assignin('base','scale',scale);
+assignin('base','session',session);
 save(fullfile(fileparts(state.img_list{1}),'brain_slice_all_results.mat'),...
-    'all_results','scale');
+    'all_results','session');
 fprintf('Saved %d image results to brain_slice_all_results.mat\n',...
     length(fieldnames(all_results)));
 set_status(hFig,true,'All results saved to brain_slice_all_results.mat');

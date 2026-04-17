@@ -33,6 +33,7 @@ hFig = figure('Name','Atlas Region Labeler','NumberTitle','off',...
     'Position',[50 50 1200 800],'Color',[0.15 0.15 0.15]);
 set(hFig,'Toolbar','none');
 
+
 % Main image axes
 hAx = axes(hFig,'Position',[0.02 0.12 0.62 0.82],'Color','k');
 
@@ -172,7 +173,8 @@ r     = state.results(idx);
 img = imread(fullfile(state.atlas_folder, r.filename));
 
 cla(h.ax);
-imshow(img,'Parent',h.ax);
+image(h.ax, img);
+axis(h.ax,'image','off');
 hold(h.ax,'on');
 
 rectangle('Parent',h.ax,...
@@ -253,7 +255,7 @@ font_size    = get(hList,'FontSize');       % points, from list properties
 fig_pos      = get(hFig,'Position');        % [x y w h] pixels
 list_pos_norm = get(hList,'Position');      % normalized
 list_h_px    = list_pos_norm(4) * fig_pos(4);
-row_h_px     = font_size * 1.25;            % empirical: ~1.6x font size per row
+row_h_px     = font_size * 1.4;            % empirical: ~1.6x font size per row
 row_h_norm   = row_h_px / list_h_px;       % as fraction of listbox height
 
 ax_sw = axes('Parent',h.swatchPanel,'Position',[0 0 1 1],...
