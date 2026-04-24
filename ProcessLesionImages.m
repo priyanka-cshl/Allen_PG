@@ -84,10 +84,11 @@ state.scale.distance_um = 0;
 state.scale.img_idx     = [];
 
 % Restore scale from session if saved
+if exist('loaded','var')
 if isfield(loaded,'scale')
     state.scale = loaded.scale;
 end
-
+end
 setappdata(hFig,'state',state);
 
 % --- Panel ---
@@ -132,14 +133,26 @@ uicontrol(hFig,'Style','slider','Min',0.1,'Max',3.0,'Value',1.0,...
     'Callback',@(src,~) update_contrast(src,hFig));
 
 % Select as reference checkbox
-uicontrol(hFig,'Style','checkbox','String','Reference',...
-    'Units','normalized','Position',[0.2 0.09 0.09 0.03],...
+% uicontrol(hFig,'Style','checkbox','String','Reference',...
+%     'Units','normalized','Position',[0.2 0.09 0.09 0.03],...
+%     'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[1 0.8 0],...
+%     'Tag','chkReference');
+
+uicontrol(hFig,'Style','checkbox','String','Ref AP=1.145',...
+    'Units','normalized','Position',[0.2 0.1 0.11 0.03],...
     'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[1 0.8 0],...
-    'Tag','chkReference');
+    'Tag','chkRef1',...
+    'Callback',@(src,~) ref_check(src,hFig,1));
+
+uicontrol(hFig,'Style','checkbox','String','Ref AP=2.045',...
+    'Units','normalized','Position',[0.2 0.07 0.11 0.03],...
+    'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[1 0.6 0],...
+    'Tag','chkRef2',...
+    'Callback',@(src,~) ref_check(src,hFig,2));
 
 % Scale image checkbox
 uicontrol(hFig,'Style','checkbox','String','Scale Image',...
-    'Units','normalized','Position',[0.2 0.05 0.09 0.03],...
+    'Units','normalized','Position',[0.2 0.04 0.09 0.03],...
     'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[0.5 0.8 1],...
     'Tag','chkScale');
 uicontrol(hFig,'Style','pushbutton','String','Set Scale',...
@@ -149,7 +162,7 @@ uicontrol(hFig,'Style','pushbutton','String','Clear Scale',...
     'Units','normalized','Position',[0.3 0.01 0.09 0.03],...
     'Callback',@(~,~) clear_scale(hFig));
 uicontrol(hFig,'Style','text','String','No scale set',...
-    'Units','normalized','Position',[0.3 0.04 0.10 0.03],...
+    'Units','normalized','Position',[0.3 0.03 0.10 0.03],...
     'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor',[0.5 0.8 1],...
     'FontSize',8,'HorizontalAlignment','left','Tag','scaleText');
 
@@ -189,7 +202,7 @@ uicontrol(hFig,'Style','togglebutton','String','Hide Annotations',...
 
 % Slice thickness input
 uicontrol(hFig,'Style','text','String','Slice (um)',...
-    'Units','normalized','Position',[0.3 0.08 0.03 0.03],...
+    'Units','normalized','Position',[0.34 0.1 0.05 0.03],...
     'BackgroundColor',[0.15 0.15 0.15],'ForegroundColor','w','FontSize',8);
 uicontrol(hFig,'Style','edit','String','75',...
     'Units','normalized','Position',[0.34 0.08 0.05 0.03],...
@@ -266,7 +279,8 @@ set(findobj(hFig,'Tag','btnAddHole'),     'Enable','off');
 set(findobj(hFig,'Tag','btnClearHoles'),  'Enable','off');
 set(findobj(hFig,'Tag','btnAddTrack'),    'Enable','off');
 set(findobj(hFig,'Tag','btnClearTracks'), 'Enable','off');
-set(findobj(hFig,'Tag','chkReference'),   'Value',0);
+set(findobj(hFig,'Tag','chkRef1'),'Value',0);
+set(findobj(hFig,'Tag','chkRef2'),'Value',0);
 set(findobj(hFig,'Tag','chkScale'),       'Value',0);
 set(findobj(hFig,'Tag','contrastSlider'), 'Value',1.0);
 set(findobj(hFig,'Tag','btnHide'),        'Value',0,'String','Hide Annotations');
@@ -287,7 +301,13 @@ if isfield(state.all_results, key)
     if isfield(r,'is_scale')
         set(findobj(hFig,'Tag','chkScale'),'Value',r.is_scale);
     end
-
+    if isfield(r,'is_reference') && numel(r.is_reference) >= 1 && r.is_reference(1)
+        if numel(r.is_reference) >= 2 && r.is_reference(2) > 2
+            set(findobj(hFig,'Tag','chkRef2'),'Value',1);
+        else
+            set(findobj(hFig,'Tag','chkRef1'),'Value',1);
+        end
+    end
     % Restore holes
     if r.has_hole && ~isempty(r.holes)
         state.has_hole = true;
@@ -298,6 +318,7 @@ if isfield(state.all_results, key)
             pos  = r.holes{i};
             hRoi = drawellipse(h.ax,'Center',pos.center,...
                 'SemiAxes',pos.semiaxes,'RotationAngle',pos.angle,'Color','y');
+            hRoi.InteractionsAllowed = 'none';
             state.holes{end+1} = struct('roi',hRoi,'pos',pos);
             hole_num = i;
             addlistener(hRoi,'ROIMoved',@(src,~) update_hole(src,hFig,hole_num));
@@ -612,7 +633,13 @@ r.bottom   = mean(h.bottom.Position(:,2));
 r.midline  = mean(h.mid.Position(:,1));
 r.img_path = state.img_list{idx};
 r.contrast = get(findobj(hFig,'Tag','contrastSlider'),'Value');
-r.is_reference = logical(get(findobj(hFig,'Tag','chkReference'),'Value'));
+if get(findobj(hFig,'Tag','chkRef1'),'Value')
+    r.is_reference = [1, 1.145];
+elseif get(findobj(hFig,'Tag','chkRef2'),'Value')
+    r.is_reference = [1, 2.045];
+else
+    r.is_reference = [0, 0];
+end
 r.is_scale     = logical(get(findobj(hFig,'Tag','chkScale'),'Value'));
 
 r.has_hole = state.has_hole;
@@ -750,6 +777,8 @@ if ~isvalid(hRoi)
     return;
 end
 
+hRoi.InteractionsAllowed = 'none';
+
 pos.center   = hRoi.Center;
 pos.semiaxes = hRoi.SemiAxes;
 pos.angle    = hRoi.RotationAngle;
@@ -863,4 +892,14 @@ end
 
 function name = fileparts_name(p)
 [~,name] = fileparts(p);
+end
+
+function ref_check(src, hFig, which)
+if src.Value
+    if which == 1
+        set(findobj(hFig,'Tag','chkRef2'),'Value',0);
+    else
+        set(findobj(hFig,'Tag','chkRef1'),'Value',0);
+    end
+end
 end

@@ -87,21 +87,24 @@ hAxBrain = axes(hFig,'Position',[0.02 0.22 0.46 0.74],'Color','k');
 hAxAtlas = axes(hFig,'Position',[0.52 0.22 0.46 0.74],'Color','k');
 
 % --- State ---
-state.idx          = 1;
-state.n            = n_slices;
-state.img_list     = img_list;
-state.gray_stack   = gray_stack;
-state.pairs        = pairs;
-state.comments     = comments;
-state.all_results  = res.all_results;
-state.allen        = allen;
-state.atlas_folder = atlas_folder;
-state.regions      = regions;
-state.pairs_path   = pairs_path;
-state.annot_path   = annot_path;
-state.annotations  = annotations;
-state.flip         = false;
-state.hide_tracks  = false;
+state.idx           = 1;
+state.n             = n_slices;
+state.img_list      = img_list;
+state.gray_stack    = gray_stack;
+state.pairs         = pairs;
+state.comments      = comments;
+state.all_results   = res.all_results;
+state.allen         = allen;
+state.atlas_folder  = atlas_folder;
+state.regions       = regions;
+state.pairs_path    = pairs_path;
+state.annot_path    = annot_path;
+state.annotations   = annotations;
+state.flip          = false;
+state.hide_tracks   = false;
+state.show_adjacent = false;
+state.measure_handles = [];
+state.offset_handles  = [];
 
 setappdata(hFig,'state',state);
 setappdata(hFig,'handles',struct('brain',hAxBrain,'atlas',hAxAtlas));
@@ -113,9 +116,11 @@ uipanel(hFig,'Units','normalized','Position',[0 0 1 0.21],...
 % Nav
 uicontrol(hFig,'Style','pushbutton','String','< Prev',...
     'Units','normalized','Position',[0.01 0.14 0.07 0.05],...
+    'ForegroundColor','w','BackgroundColor',[0.77 0.08 0.5],...
     'Callback',@(~,~) nav(hFig,-1));
 uicontrol(hFig,'Style','pushbutton','String','Next >',...
     'Units','normalized','Position',[0.09 0.14 0.07 0.05],...
+    'ForegroundColor','w','BackgroundColor',[0.0 0.54 0.54],...
     'Callback',@(~,~) nav(hFig,+1));
 
 % Dropdown
@@ -128,58 +133,92 @@ uicontrol(hFig,'Style','popupmenu',...
 
 % Contrast slider
 uicontrol(hFig,'Style','text','String','Contrast',...
-    'Units','normalized','Position',[0.20 0.17 0.06 0.02],...
+    'Units','normalized','Position',[0.18 0.17 0.06 0.02],...
     'BackgroundColor',[0.1 0.1 0.1],'ForegroundColor','w','FontSize',8);
 uicontrol(hFig,'Style','slider','Min',0.1,'Max',3.0,'Value',1.0,...
-    'Units','normalized','Position',[0.20 0.14 0.15 0.03],...
+    'Units','normalized','Position',[0.18 0.14 0.15 0.03],...
     'Tag','contrastSlider',...
     'Callback',@(~,~) draw_slice(hFig));
 
-% Row 1 toggles: Flip, AP, Hide Tracks
+% Measure button + offset input (next to contrast slider)
+uicontrol(hFig,'Style','togglebutton','String','Measure',...
+    'Units','normalized','Position',[0.34 0.14 0.07 0.05],...
+    'Tag','btnMeasure','ForegroundColor','k','BackgroundColor',[0.7 0.7 0.5],'Value',0,...
+    'Callback',@(src,~) toggle_measure(src,hFig));
+
+uicontrol(hFig,'Style','togglebutton','String','Offset',...
+    'Units','normalized','Position',[0.42 0.14 0.06 0.05],...
+    'Tag','btnOffset','ForegroundColor','k','BackgroundColor',[0.7 0.6 0.7],'Value',0,...
+    'Callback',@(src,~) toggle_offset(src,hFig));
+
+uicontrol(hFig,'Style','text','String','um',...
+    'Units','normalized','Position',[0.54 0.14 0.02 0.03],...
+    'BackgroundColor',[0.1 0.1 0.1],'ForegroundColor','w','FontSize',8);
+uicontrol(hFig,'Style','edit','String','500',...
+    'Units','normalized','Position',[0.49 0.14 0.05 0.04],...
+    'Tag','offsetUm','BackgroundColor',[0.2 0.2 0.2],'ForegroundColor','w',...
+    'FontSize',9,'TooltipString','Offset in um (+above, -below)');
+
+% Row 1 toggles: Flip, AP, Hide Tracks, Show ±1
 uicontrol(hFig,'Style','togglebutton','String','Flip Brain',...
-    'Units','normalized','Position',[0.20 0.08 0.09 0.05],...
+    'Units','normalized','Position',[0.18 0.08 0.09 0.05],...
     'Tag','btnFlip','ForegroundColor','k','BackgroundColor',[0.6 0.6 0.6],...
     'Callback',@(src,~) toggle_flip(src,hFig));
 
 uicontrol(hFig,'Style','togglebutton','String','AP: Post→Ant',...
-    'Units','normalized','Position',[0.30 0.08 0.10 0.05],...
+    'Units','normalized','Position',[0.28 0.08 0.09 0.05],...
     'Tag','btnAPDir','ForegroundColor','k','BackgroundColor',[0.6 0.6 0.6],'Value',0,...
     'Callback',@(src,~) toggle_ap(src,hFig));
 
 uicontrol(hFig,'Style','togglebutton','String','Hide Tracks',...
-    'Units','normalized','Position',[0.41 0.08 0.09 0.05],...
+    'Units','normalized','Position',[0.38 0.08 0.09 0.05],...
     'Tag','btnHideTracks','ForegroundColor','k','BackgroundColor',[0.6 0.6 0.6],'Value',0,...
     'Callback',@(src,~) toggle_tracks(src,hFig));
 
+uicontrol(hFig,'Style','togglebutton','String','Show ±1 Slices',...
+    'Units','normalized','Position',[0.48 0.08 0.09 0.05],...
+    'Tag','btnAdjacentSlices','ForegroundColor','k','BackgroundColor',[0.6 0.6 0.6],'Value',0,...
+    'Callback',@(src,~) toggle_adjacent(src,hFig));
+
 % Row 2: 3D view buttons
 uicontrol(hFig,'Style','pushbutton','String','3D View',...
-    'Units','normalized','Position',[0.20 0.02 0.09 0.05],...
+    'Units','normalized','Position',[0.18 0.02 0.09 0.05],...
     'ForegroundColor','k','BackgroundColor',[0.5 0.7 0.5],...
     'Callback',@(~,~) open_3d_view(hFig));
 
 uicontrol(hFig,'Style','pushbutton','String','Top (ML-AP)',...
-    'Units','normalized','Position',[0.30 0.02 0.10 0.05],...
+    'Units','normalized','Position',[0.28 0.02 0.09 0.05],...
     'ForegroundColor','k','BackgroundColor',[0.5 0.6 0.7],...
     'Callback',@(~,~) set_3d_view(hFig,0,90));
 
 uicontrol(hFig,'Style','pushbutton','String','Side (DV-AP)',...
-    'Units','normalized','Position',[0.41 0.02 0.09 0.05],...
+    'Units','normalized','Position',[0.38 0.02 0.09 0.05],...
     'ForegroundColor','k','BackgroundColor',[0.5 0.6 0.7],...
     'Callback',@(~,~) set_3d_view(hFig,90,0));
 
 % Save
 uicontrol(hFig,'Style','pushbutton','String','Save',...
-    'Units','normalized','Position',[0.92 0.14 0.07 0.05],...
+    'Units','normalized','Position',[0.48 0.02 0.09 0.05],...
     'ForegroundColor','w','BackgroundColor',[0.2 0.3 0.6],...
     'Callback',@(~,~) save_all(hFig));
 
-% Comment box
+% Overview notes
 uicontrol(hFig,'Style','text','String','Notes:',...
-    'Units','normalized','Position',[0.55 0.18 0.05 0.02],...
+    'Units','normalized','Position',[0.6 0.18 0.58 0.02],...
     'BackgroundColor',[0.1 0.1 0.1],'ForegroundColor','w',...
     'FontSize',9,'HorizontalAlignment','left');
 uicontrol(hFig,'Style','edit','String','',...
-    'Units','normalized','Position',[0.55 0.02 0.32 0.15],...
+    'Units','normalized','Position',[0.64 0.1 0.34 0.1],...
+    'Tag','overviewBox','HorizontalAlignment','left','Max',5,...
+    'BackgroundColor',[0.2 0.2 0.2],'ForegroundColor','w','FontSize',10);
+
+% Slice notes
+uicontrol(hFig,'Style','text','String','Slice Notes:',...
+    'Units','normalized','Position',[0.58 0.07 0.6 0.02],...
+    'BackgroundColor',[0.1 0.1 0.1],'ForegroundColor','w',...
+    'FontSize',9,'HorizontalAlignment','left');
+uicontrol(hFig,'Style','edit','String','',...
+    'Units','normalized','Position',[0.64 0.02 0.34 0.07],...
     'Tag','commentBox','HorizontalAlignment','left','Max',5,...
     'BackgroundColor',[0.2 0.2 0.2],'ForegroundColor','w','FontSize',10);
 
@@ -188,6 +227,10 @@ uicontrol(hFig,'Style','text','String','Ready.',...
     'Units','normalized','Position',[0.01 0.0 0.98 0.02],...
     'BackgroundColor',[0.1 0.1 0.1],'ForegroundColor',[0.5 1 0.5],...
     'FontSize',8,'HorizontalAlignment','left','Tag','statusText');
+
+if isfield(annotations,'overview')
+    set(findobj(hFig,'Tag','overviewBox'),'String',annotations.overview);
+end
 
 draw_slice(hFig);
 end
@@ -202,24 +245,44 @@ allen_aps = [allen.ap_mm];
 
 ref_brain_idx = [];
 ref_r         = [];
+ref_ap        = 1.145;
 for fi = 1:n_slices
     r = all_results.(fields{fi});
-    if isfield(r,'is_reference') && r.is_reference
-        ref_brain_idx = str2double(fields{fi}(4:end));
-        ref_r         = r;
-        break;
+    if isfield(r,'is_reference')
+        ir = r.is_reference;
+        if (islogical(ir) && ir) || (isnumeric(ir) && numel(ir)>=1 && ir(1))
+            ref_brain_idx = str2double(fields{fi}(4:end));
+            ref_r         = r;
+            if isnumeric(ir) && numel(ir) >= 2
+                ref_ap = ir(2);
+            else
+                ref_ap = 1.145;
+            end
+            break;
+        end
     end
 end
 if isempty(ref_brain_idx)
     error('No reference slice found. Mark one slice as Reference in ProcessLesionImages.');
 end
 
-ref_ap      = 1.145;
 slice_thick = session.slice_thickness / 1000;
 um_per_px   = session.scale.um_per_px;
 
 pairs    = struct();
 comments = struct();
+
+% Determine global flip from first slice with lesions
+global_flip = false;
+for fi = 1:n_slices
+    r = all_results.(fields{fi});
+    if isfield(r,'has_hole') && r.has_hole && ~isempty(r.holes)
+        mean_cx     = mean(cellfun(@(h) h.center(1), r.holes));
+        global_flip = mean_cx < r.midline;
+        fprintf('Auto-flip determined from %s: %d\n', fields{fi}, global_flip);
+        break;
+    end
+end
 
 for fi = 1:n_slices
     key       = fields{fi};
@@ -251,6 +314,7 @@ for fi = 1:n_slices
     pairs.(key).allen_right     = a.right;
     pairs.(key).allen_bottom    = a.bottom;
     pairs.(key).brain_bottom    = r.bottom;
+    pairs.(key).auto_flip       = global_flip;
 
     comments.(key) = '';
 
@@ -265,9 +329,13 @@ end
 function [ax, ay] = brain_to_atlas(bx, by, p, flipped)
 if flipped
     bx = 2*p.brain_midline - bx;
+    brain_half_w = p.brain_midline - p.brain_left;
+else
+    brain_half_w = p.brain_right - p.brain_midline;
 end
-scale_x = (p.allen_right - p.allen_midline) / (p.brain_right - p.brain_midline);
-scale_y = (p.allen_bottom - p.allen_top)    / (p.brain_bottom - p.brain_top);
+allen_half_w = p.allen_right - p.allen_midline;
+scale_x = allen_half_w / brain_half_w;
+scale_y = (p.allen_bottom - p.allen_top) / (p.brain_bottom - p.brain_top);
 ax = p.allen_midline + (bx - p.brain_midline) * scale_x;
 ay = p.allen_top     + (by - p.brain_top)     * scale_y;
 end
@@ -310,7 +378,7 @@ note_lines{end+1} = sprintf('%d lesion(s), %d track(s).', n_holes, n_tracks);
 
 lesion_list = [];
 for i = 1:n_holes
-    [ax, ay] = brain_to_atlas(r.holes{i}.center(1), r.holes{i}.center(2), p, false);
+    [ax, ay] = brain_to_atlas(r.holes{i}.center(1), r.holes{i}.center(2), p, p.auto_flip);
     [region_name, edge_dist] = identify_region(ax, ay, regions, p.allen_idx);
 
     if isfinite(edge_dist)
@@ -334,14 +402,13 @@ for i = 1:n_holes
     end
 end
 
-% Track endpoint regions
 for i = 1:n_tracks
     t = r.electrode_tracks{i};
     if t.start(2) > t.end(2)
         tmp = t.start; t.start = t.end; t.end = tmp;
     end
-    [ax1,ay1] = brain_to_atlas(t.start(1),t.start(2),p,false);
-    [ax2,ay2] = brain_to_atlas(t.end(1),  t.end(2),  p,false);
+    [ax1,ay1] = brain_to_atlas(t.start(1),t.start(2),p,p.auto_flip);
+    [ax2,ay2] = brain_to_atlas(t.end(1),  t.end(2),  p,p.auto_flip);
     [r1,~]    = identify_region(ax1,ay1,regions,p.allen_idx);
     [r2,~]    = identify_region(ax2,ay2,regions,p.allen_idx);
     if strcmp(r1,r2)
@@ -352,6 +419,135 @@ for i = 1:n_tracks
 end
 
 notes = strjoin(note_lines, newline);
+end
+
+% =========================================================================
+%  MEASURE DEPTH
+% =========================================================================
+function toggle_measure(src,hFig)
+set(findobj(hFig,'Tag','btnOffset'),'Value',0);
+clear_transient_handles(hFig);
+if src.Value
+    measure_depth(hFig);
+    set(src,'Value',0);
+end
+end
+
+function measure_depth(hFig)
+state = getappdata(hFig,'state');
+h     = getappdata(hFig,'handles');
+key   = sprintf('img%d',state.idx);
+
+%click and detect axes
+set_status(hFig,'Click point 1 on either image...');
+[x1,y1,btn] = ginput(1);
+clicked_ax = gca; % whichever axes was active when clicked
+if clicked_ax == h.brain
+    um_per_px = state.pairs.(key).um_per_px;
+    ax = h.brain;
+else
+    um_per_px = state.pairs.(key).allen_um_per_px;
+    ax = h.atlas;
+end
+
+hp1 = plot(ax,x1,y1,'+','Color','c','MarkerSize',14,'LineWidth',1.5);
+
+set_status(hFig,'Click point 2...');
+[x2,y2] = ginput(1);
+hp2 = plot(ax,x2,y2,'+','Color','c','MarkerSize',14,'LineWidth',1.5);
+hln = plot(ax,[x1 x2],[y1 y2],'-','Color','c','LineWidth',1);
+
+dist_px = sqrt((x2-x1)^2 + (y2-y1)^2);
+dist_um = dist_px * um_per_px;
+
+xm = (x1+x2)/2; ym = (y1+y2)/2;
+htm = text(ax,xm,ym,sprintf('%.1f um',dist_um),...
+    'Color','c','FontSize',10,'HorizontalAlignment','center',...
+    'VerticalAlignment','bottom','BackgroundColor',[0 0 0]);
+
+set_status(hFig,sprintf('Distance: %.1f px = %.1f um',dist_px,dist_um));
+
+state = getappdata(hFig,'state');
+state.measure_handles = [hp1 hp2 hln htm];
+setappdata(hFig,'state',state);
+end
+
+% =========================================================================
+%  OFFSET MARKER
+% =========================================================================
+function toggle_offset(src,hFig)
+set(findobj(hFig,'Tag','btnMeasure'),'Value',0);
+clear_transient_handles(hFig);
+if src.Value
+    mark_offset(hFig);
+    set(src,'Value',0);
+end
+end
+
+function mark_offset(hFig)
+state     = getappdata(hFig,'state');
+h         = getappdata(hFig,'handles');
+key       = sprintf('img%d',state.idx);
+offset_um = str2double(get(findobj(hFig,'Tag','offsetUm'),'String'));
+
+if isnan(offset_um)
+    set_status(hFig,'Invalid offset value.');
+    return;
+end
+
+%click and detect axes
+set_status(hFig,'Click reference point on either image...');
+[x,y] = ginput(1);
+clicked_ax = gca; % whichever axes was active when clicked
+if clicked_ax == h.brain
+    um_per_px = state.pairs.(key).um_per_px;
+    ax = h.brain;
+else
+    um_per_px = state.pairs.(key).allen_um_per_px;
+    ax = h.atlas;
+end
+offset_px = offset_um / um_per_px;
+
+% Reference point
+hp1 = plot(ax,x,y,'+','Color','m','MarkerSize',12,'LineWidth',1.5);
+
+% Offset point (negative y = up in image coords)
+y_off = y - offset_px; % negative offset = up = dorsal
+hp2 = plot(ax,x,y_off,'x','Color','m','MarkerSize',14,'LineWidth',2);
+hln = plot(ax,[x x],[y y_off],'--','Color','m','LineWidth',1);
+htm = text(ax,x+100,y_off,sprintf('%.0f um',offset_um),...
+    'Color','m','FontSize',10,'HorizontalAlignment','left',...
+    'VerticalAlignment','middle');
+
+set_status(hFig,sprintf('Offset marker placed at %.0f um from reference.',offset_um));
+
+state = getappdata(hFig,'state');
+state.offset_handles = [hp1 hp2 hln htm];
+setappdata(hFig,'state',state);
+end
+
+function s = ternary(cond, a, b)
+if cond, s = a; else, s = b; end
+end
+
+% =========================================================================
+%  CLEAR TRANSIENT HANDLES
+% =========================================================================
+function clear_transient_handles(hFig)
+state = getappdata(hFig,'state');
+if isfield(state,'measure_handles') && ~isempty(state.measure_handles)
+    for i = 1:length(state.measure_handles)
+        try delete(state.measure_handles(i)); catch; end
+    end
+    state.measure_handles = [];
+end
+if isfield(state,'offset_handles') && ~isempty(state.offset_handles)
+    for i = 1:length(state.offset_handles)
+        try delete(state.offset_handles(i)); catch; end
+    end
+    state.offset_handles = [];
+end
+setappdata(hFig,'state',state);
 end
 
 % =========================================================================
@@ -391,7 +587,6 @@ ax3 = axes(h3d,'Color','k','XColor','w','YColor','w','ZColor','w',...
 hold(ax3,'on'); grid(ax3,'on'); box(ax3,'on');
 setappdata(hFig,'h3dAx',ax3);
 
-% Compute mean vertical center for DV centering
 fields     = fieldnames(state.pairs);
 dv_centers = zeros(length(fields),1);
 for fi = 1:length(fields)
@@ -406,15 +601,14 @@ slice_colors = lines(n_fields);
 for fi = 1:length(fields)
     key = fields{fi};
     p   = state.pairs.(key);
-    z   = p.ap * 1000; % mm → um
+    z   = p.ap * 1000;
 
     if ~isfield(state.all_results,key), continue; end
     r = state.all_results.(key);
 
-    % Lesions
     if r.has_hole && ~isempty(r.holes)
         for i = 1:length(r.holes)
-            [ax,ay] = brain_to_atlas(r.holes{i}.center(1),r.holes{i}.center(2),p,false);
+            [ax,ay] = brain_to_atlas(r.holes{i}.center(1),r.holes{i}.center(2),p,p.auto_flip);
             ml = (ax - p.allen_midline) * p.allen_um_per_px;
             dv = ay * p.allen_um_per_px - dv_mean;
             base_col = slice_colors(fi,:);
@@ -423,11 +617,9 @@ for fi = 1:length(fields)
         end
     end
 
-    % Tracks
     if r.has_electrode && ~isempty(r.electrode_tracks)
         for ti = 1:length(r.electrode_tracks)
             t  = r.electrode_tracks{ti};
-            % Top to bottom
             if t.start(2) > t.end(2)
                 tmp = t.start; t.start = t.end; t.end = tmp;
             end
@@ -435,8 +627,8 @@ for fi = 1:length(fields)
             lighten  = (ti-1) * 0.15;
             tc       = min(base_col + lighten, 1);
 
-            [ax1,ay1] = brain_to_atlas(t.start(1),t.start(2),p,false);
-            [ax2,ay2] = brain_to_atlas(t.end(1),  t.end(2),  p,false);
+            [ax1,ay1] = brain_to_atlas(t.start(1),t.start(2),p,p.auto_flip);
+            [ax2,ay2] = brain_to_atlas(t.end(1),  t.end(2),  p,p.auto_flip);
             ml1 = (ax1 - p.allen_midline) * p.allen_um_per_px;
             ml2 = (ax2 - p.allen_midline) * p.allen_um_per_px;
             dv1 = ay1 * p.allen_um_per_px - dv_mean;
@@ -455,7 +647,6 @@ set(ax3,'ZDir','reverse');
 view(ax3,35,25);
 rotate3d(ax3,'on');
 
-% View buttons in 3D figure
 uicontrol(h3d,'Style','pushbutton','String','3D View',...
     'Units','normalized','Position',[0.01 0.01 0.12 0.05],...
     'Callback',@(~,~) view(ax3,35,25));
@@ -476,6 +667,9 @@ end
 %  DRAW SLICE
 % =========================================================================
 function draw_slice(hFig)
+% Clear transient measure/offset handles on redraw
+clear_transient_handles(hFig);
+
 state = getappdata(hFig,'state');
 h     = getappdata(hFig,'handles');
 idx   = state.idx;
@@ -495,6 +689,40 @@ if gamma == 1.0
 end
 gray     = double(state.gray_stack{idx});
 gray_adj = gray .^ (1/gamma);
+
+% --- Center by bounding box with fixed canvas ---
+canvas_h = size(gray,1);
+canvas_w = size(gray,2);
+
+if isfield(state.all_results,key)
+    r    = state.all_results.(key);
+    row1 = max(1,   round(r.top));
+    row2 = min(size(gray_adj,1), round(r.bottom));
+    col1 = max(1,   round(r.left));
+    col2 = min(size(gray_adj,2), round(r.right));
+
+    cropped = gray_adj(row1:row2, col1:col2);
+    crop_h  = size(cropped,1);
+    crop_w  = size(cropped,2);
+
+    canvas = zeros(canvas_h, canvas_w);
+    r_start = max(1, round((canvas_h - crop_h)/2) + 1);
+    c_start = max(1, round((canvas_w - crop_w)/2) + 1);
+    r_end   = min(canvas_h, r_start + crop_h - 1);
+    c_end   = min(canvas_w, c_start + crop_w - 1);
+    canvas(r_start:r_end, c_start:c_end) = cropped(1:r_end-r_start+1, 1:c_end-c_start+1);
+
+    gray_adj = canvas;
+
+    crop_offset_x = col1 - 1 - (c_start - 1);
+    crop_offset_y = row1 - 1 - (r_start - 1);
+else
+    canvas        = gray_adj;
+    gray_adj      = canvas;
+    crop_offset_x = 0;
+    crop_offset_y = 0;
+end
+
 if state.flip
     gray_adj = fliplr(gray_adj);
 end
@@ -508,14 +736,13 @@ ap_str = 'no annotations';
 if isfield(state.all_results,key)
     r = state.all_results.(key);
 
-    % Tracks and lesions (hidden together if toggled)
     if ~state.hide_tracks
         % Lesions
         if r.has_hole && ~isempty(r.holes)
             for i = 1:length(r.holes)
-                cx = r.holes{i}.center(1);
-                cy = r.holes{i}.center(2);
-                if state.flip, cx = 2*r.midline - cx; end
+                cx = r.holes{i}.center(1) - crop_offset_x;
+                cy = r.holes{i}.center(2) - crop_offset_y;
+                if state.flip, cx = size(gray_adj,2) - cx + 1; end
                 plot(h.brain,cx,cy,'o',...
                     'MarkerSize',10,'MarkerFaceColor','y','MarkerEdgeColor','y');
             end
@@ -524,14 +751,78 @@ if isfield(state.all_results,key)
         if r.has_electrode && ~isempty(r.electrode_tracks)
             for i = 1:length(r.electrode_tracks)
                 t  = r.electrode_tracks{i};
-                x1 = t.start(1); x2 = t.end(1);
-                y1 = t.start(2); y2 = t.end(2);
+                x1 = t.start(1)-crop_offset_x; x2 = t.end(1)-crop_offset_x;
+                y1 = t.start(2)-crop_offset_y; y2 = t.end(2)-crop_offset_y;
                 if y1 > y2, [x1,y1,x2,y2] = deal(x2,y2,x1,y1); end
                 if state.flip
-                    x1 = 2*r.midline - x1;
-                    x2 = 2*r.midline - x2;
+                    x1 = size(gray_adj,2) - x1 + 1;
+                    x2 = size(gray_adj,2) - x2 + 1;
                 end
                 plot(h.brain,[x1 x2],[y1 y2],'-','Color',[1 0.5 0],'LineWidth',1.5);
+            end
+        end
+    end
+
+    % --- Overlay adjacent slices ---
+    if state.show_adjacent
+        for delta = [-1 1]
+            adj_idx = idx + delta;
+            if adj_idx < 1 || adj_idx > state.n, continue; end
+            adj_key = sprintf('img%d', adj_idx);
+            if ~isfield(state.all_results, adj_key), continue; end
+            adj_r = state.all_results.(adj_key);
+
+            adj_gray = double(state.gray_stack{adj_idx});
+            if isfield(state.all_results, adj_key)
+                row1_a = max(1,   round(adj_r.top));
+                col1_a = max(1,   round(adj_r.left));
+                canvas_h_a = size(adj_gray,1);
+                canvas_w_a = size(adj_gray,2);
+                crop_h_a   = round(adj_r.bottom) - round(adj_r.top);
+                crop_w_a   = round(adj_r.right)  - round(adj_r.left);
+                r_start_a  = max(1, round((canvas_h_a - crop_h_a)/2) + 1);
+                c_start_a  = max(1, round((canvas_w_a - crop_w_a)/2) + 1);
+                crop_offset_x_a = col1_a - 1 - (c_start_a - 1);
+                crop_offset_y_a = row1_a - 1 - (r_start_a - 1);
+            else
+                crop_offset_x_a = 0;
+                crop_offset_y_a = 0;
+            end
+
+            if delta == -1
+                dot_col  = [0.77 0.08 0.5];
+                line_col = dot_col;
+            else
+                dot_col  = [0 0.54 0.54];
+                line_col = dot_col;
+            end
+
+            if adj_r.has_hole && ~isempty(adj_r.holes)
+                for i = 1:length(adj_r.holes)
+                    cx = adj_r.holes{i}.center(1) - crop_offset_x_a;
+                    cy = adj_r.holes{i}.center(2) - crop_offset_y_a;
+                    if state.flip, cx = size(gray_adj,2) - cx + 1; end
+                    plot(h.brain,cx,cy,'o',...
+                        'MarkerSize',8,'MarkerFaceColor','none',...
+                        'MarkerEdgeColor',dot_col,'LineWidth',2);
+                end
+            end
+
+            if adj_r.has_electrode && ~isempty(adj_r.electrode_tracks)
+                for i = 1:length(adj_r.electrode_tracks)
+                    t  = adj_r.electrode_tracks{i};
+                    x1 = t.start(1) - crop_offset_x_a;
+                    x2 = t.end(1)   - crop_offset_x_a;
+                    y1 = t.start(2) - crop_offset_y_a;
+                    y2 = t.end(2)   - crop_offset_y_a;
+                    if y1 > y2, [x1,y1,x2,y2] = deal(x2,y2,x1,y1); end
+                    if state.flip
+                        x1 = size(gray_adj,2) - x1 + 1;
+                        x2 = size(gray_adj,2) - x2 + 1;
+                    end
+                    plot(h.brain,[x1 x2],[y1 y2],'-','Color',line_col,...
+                        'LineWidth',1.5,'LineStyle','--');
+                end
             end
         end
     end
@@ -577,7 +868,6 @@ if isfield(state.pairs,key)
         end
     end
 
-    % Transformed lesions and tracks
     if isfield(state.all_results,key)
         r = state.all_results.(key);
 
@@ -585,18 +875,18 @@ if isfield(state.pairs,key)
         if r.has_hole && ~isempty(r.holes)
             for i = 1:length(r.holes)
                 [ax,ay] = brain_to_atlas(...
-                    r.holes{i}.center(1),r.holes{i}.center(2),p,state.flip);
+                    r.holes{i}.center(1),r.holes{i}.center(2),p,p.auto_flip);
                 plot(h.atlas,ax,ay,'o',...
                     'MarkerSize',10,'MarkerFaceColor','y','MarkerEdgeColor','y');
             end
         end
 
-        % Tracks — always shown on Allen
+        % Tracks
         if r.has_electrode && ~isempty(r.electrode_tracks)
             for i = 1:length(r.electrode_tracks)
                 t = r.electrode_tracks{i};
-                [ax1,ay1] = brain_to_atlas(t.start(1),t.start(2),p,state.flip);
-                [ax2,ay2] = brain_to_atlas(t.end(1),  t.end(2),  p,state.flip);
+                [ax1,ay1] = brain_to_atlas(t.start(1),t.start(2),p,p.auto_flip);
+                [ax2,ay2] = brain_to_atlas(t.end(1),  t.end(2),  p,p.auto_flip);
                 if ay1 > ay2, [ax1,ay1,ax2,ay2] = deal(ax2,ay2,ax1,ay1); end
                 plot(h.atlas,[ax1 ax2],[ay1 ay2],'-',...
                     'Color',[1 0.5 0],'LineWidth',1.5);
@@ -604,16 +894,26 @@ if isfield(state.pairs,key)
         end
 
         % Transformed bounding box
-        [ax_tl,ay_tl] = brain_to_atlas(r.left,  r.top,    p, state.flip);
-        [ax_tr,ay_tr] = brain_to_atlas(r.right, r.top,    p, state.flip);
-        [ax_bl,ay_bl] = brain_to_atlas(r.left,  r.bottom, p, state.flip);
-        [ax_br,ay_br] = brain_to_atlas(r.right, r.bottom, p, state.flip);
+        if p.auto_flip
+            bbox_left  = p.brain_midline;
+            bbox_right = r.right;
+        else
+            bbox_left  = r.left;
+            bbox_right = p.brain_midline;
+        end
+        [ax_tl,ay_tl] = brain_to_atlas(bbox_left,  r.top,    p, p.auto_flip);
+        [ax_tr,ay_tr] = brain_to_atlas(bbox_right, r.top,    p, p.auto_flip);
+        [ax_bl,ay_bl] = brain_to_atlas(bbox_left,  r.bottom, p, p.auto_flip);
+        [ax_br,ay_br] = brain_to_atlas(bbox_right, r.bottom, p, p.auto_flip);
         xbox = [ax_tl ax_tr ax_br ax_bl ax_tl];
         ybox = [ay_tl ay_tr ay_br ay_bl ay_tl];
         plot(h.atlas,xbox,ybox,'--','Color',[0.5 0.5 0.5],'LineWidth',1);
 
-        % Auto-generate notes if not done yet for this slice
+        % Auto-generate notes
         if ~isempty(state.regions) && (r.has_hole || r.has_electrode)
+            fprintf('key=%s, has_notes=%d, note_empty=%d\n', key, ...
+                isfield(state.annotations.notes,key), ...
+                isfield(state.annotations.notes,key) && isempty(state.annotations.notes.(key)));
             if ~isfield(state.annotations.notes,key) || ...
                     isempty(state.annotations.notes.(key))
                 [auto_notes, lesion_list] = generate_notes(key, r, p, state.regions);
@@ -694,6 +994,13 @@ setappdata(hFig,'state',state);
 draw_slice(hFig);
 end
 
+function toggle_adjacent(src,hFig)
+state = getappdata(hFig,'state');
+state.show_adjacent = logical(src.Value);
+setappdata(hFig,'state',state);
+draw_slice(hFig);
+end
+
 function toggle_ap(src,hFig)
 state = getappdata(hFig,'state');
 fields = fieldnames(state.pairs);
@@ -734,7 +1041,10 @@ key   = sprintf('img%d',state.idx);
 note  = get(findobj(hFig,'Tag','commentBox'),'String');
 state.annotations.notes.(key) = note;
 state.comments.(key)          = note;
+state.annotations.overview = get(findobj(hFig,'Tag','overviewBox'),'String');
 setappdata(hFig,'state',state);
+annotations = state.annotations;
+save(state.annot_path,'annotations');
 end
 
 function save_all(hFig)
@@ -743,6 +1053,7 @@ state       = getappdata(hFig,'state');
 pairs       = state.pairs;
 comments    = state.comments;
 annotations = state.annotations;
+annotations.overview = get(findobj(hFig,'Tag','overviewBox'),'String');
 
 save(state.pairs_path,'pairs','comments');
 save(state.annot_path,'annotations');
